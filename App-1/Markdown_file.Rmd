@@ -1,0 +1,489 @@
+---
+title: "Police Shootings in the United States"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(shiny)
+library(usmap)
+library(ggplot2)
+library(stringr)
+library(maps)
+library(viridis)
+library(lubridate)
+library(dplyr)
+library(zoo)
+library(repr)
+library(lemon)
+library(rsconnect)
+```
+
+
+``` {r datasetup}
+this.dir <- dirname(rstudioapi::getSourceEditorContext()$path)
+setwd(this.dir)
+
+sh_shooting_data <- get(load("shooting_data.RData"))
+sh_state_data <- get(load("state_data.RData"))
+sh_race_data <- get(load("race_data.RData"))
+sh_rolling_data <- get(load("rolling_data.RData"))
+original_data <- get(load("original_data.RData"))
+
+
+sh_rolling_data <- sh_shooting_data %>%
+  group_by(date) %>%
+  summarise(count = n()) %>%
+  mutate(death_03da = rollmean(count, k = 3, fill = NA),
+         death_05da = rollmean(count, k = 5, fill = NA),
+         death_07da = rollmean(count, k = 7, fill = NA),
+         death_10da = rollmean(count, k = 10, fill = NA),
+         death_15da = rollmean(count, k = 15, fill 
+                                    = NA),
+         death_21da = rollmean(count, k = 21, fill = NA)) %>% 
+  ungroup() %>%
+  group_by(year(date)) %>%
+  mutate(cmsum = cumsum(count)) %>%
+  ungroup() %>%
+  mutate(month = month.name[month(date)])
+
+median_male <- median(sh_shooting_data$age[sh_shooting_data$male==1])
+median_female <-median(sh_shooting_data$age[sh_shooting_data$male==0])
+colourss <- c("#135420","#352735")
+vertical_lines <- c(median_male, median_female)
+
+total <-scales::label_comma(accuracy = 1)(sum(original_data$exists))
+
+mindate <- min(sh_shooting_data$date)
+maxdate <- max(sh_shooting_data$date)
+```
+
+Main Page
+=====================================  
+
+Sidebar {.sidebar}
+-----------------------------------------------------------------------
+
+After the murders of [Michael Brown](https://en.wikipedia.org/wiki/Shooting_of_Michael_Brown) and [Eric Garner](https://en.wikipedia.org/wiki/Killing_of_Eric_Garner), a large amount of attention was focused on police brutality and deaths at the hands of police. This dashboard provides a visualization of these deaths. Data is sourced from the [Washington Post](https://github.com/washingtonpost/data-police-shootings) (death data) and the [2020 United States Census](https://data.census.gov/) (population data). The Washington Post data ranges from `r mindate` to `r maxdate`. Not all records from the Washington Post dataset are included due to removal of rows with null age and/or gender.
+
+``` {r yearrange}
+sliderInput("yearrange",label = "Years:", sep= "", min = 2015, max = 2022, value = c(2015, 2022))
+```
+
+I recognize that not all police are bad, and that the media tends to sensationalize stories in order to get views/clicks/advertising dollars, but that doesn't take away from the fact that `r total` human beings have been killed in the last seven years by individuals who we are supposed to be able to trust to protect us. The last tab of this dashboard has the names and ages of all victims (both included and excluded from the data visualizations).
+   
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Deaths per Million
+
+
+
+```{r map}
+renderPlot({
+        
+  data <- sh_state_data %>%
+   filter(between(year, input$yearrange[1], input$yearrange[2]))
+  
+         usmap::plot_usmap(data = data, values = "per_million", color = "black") +
+  scale_fill_continuous(high = "#856084", low = "#DDE1E4", name = "Per Million", breaks = c(2,4,6,8,10)) + 
+            theme(legend.position = "left") +
+            labs(title = "Deaths Per Million (By State)")
+})
+```
+
+### A Breakdown by Age and Gender
+
+```{r genderage}
+
+renderPlot({
+  
+  data <- sh_shooting_data %>%
+   filter(between(year, input$yearrange[1], input$yearrange[2]))
+  
+  ggplot(data = data) + 
+              geom_bar(mapping = aes(x = age, y = ..prop.., group = gender, fill = gender)) + 
+              scale_y_continuous(labels = scales::percent_format()) + 
+              scale_fill_manual(values = c("#84E296","#856084")) +
+              labs(title = "Deaths by Gender and Age of Victim", x = "Age of Victim",y = "Percentage of Total Deaths", fill = "Gender")                          })
+```
+
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+
+### Deaths Over Time
+
+```{r movingaverage}
+renderPlot({
+  sh_rolling_data %>%
+     filter(between(year(date), input$yearrange[1], input$yearrange[2])) %>%
+  ggplot(aes(x=date, y=death_10da)) + geom_line() + ylim(0,5) +
+  labs(title = "10-Day Moving Average", x ="Date",y ="Number of Deaths")
+})
+```
+
+
+### A Look Into Ethnic Makeup
+Entirety of 2015 to 2022, not controlled by slider in sidebar
+
+``` {r ethnicity}
+
+ggplot(sh_race_data, aes(x = race, y=per_million, fill=per_million)) +
+            geom_bar(stat= "identity") +
+            scale_fill_continuous(high = "#624862", low = "#baa1ba",name="Per Million") + 
+            labs(
+              title = "Deaths Per Million by Ethnicity",
+              subtitle = "Ethnicity Data Sourced from 2020 United States Census"
+            ) +
+            theme(
+              plot.title = element_text(hjust = 0.5),
+              plot.subtitle = element_text(hjust = 0.5)
+            ) + 
+            xlab("Ethnicity") +
+            ylab("Deaths per Million") 
+```
+
+Map
+=====================================  
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+### Examination
+```{r variablesmap, include=FALSE}
+maxval2015 <- sh_state_data %>%
+  filter(year == 2015) %>%
+       select(state,per_million) %>%
+  slice_max(per_million) %>%
+  select(state)
+
+maxval2016 <- sh_state_data %>%
+  filter(year == 2016) %>%
+       select(state,per_million) %>%
+  slice_max(per_million) %>%
+  select(state)
+
+maxval2017 <- sh_state_data %>%
+  filter(year == 2017) %>%
+       select(state,per_million) %>%
+  slice_max(per_million) %>%
+  select(state)
+
+maxval2018 <- sh_state_data %>%
+  filter(year == 2018) %>%
+       select(state,per_million) %>%
+  slice_max(per_million) %>%
+  select(state)
+
+maxval2019 <- sh_state_data %>%
+  filter(year == 2019) %>%
+       select(state,per_million) %>%
+  slice_max(per_million) %>%
+  select(state)
+
+maxval2020 <- sh_state_data %>%
+  filter(year == 2020) %>%
+       select(state,per_million) %>%
+  slice_max(per_million) %>%
+  select(state)
+
+maxval2021 <- sh_state_data %>%
+  filter(year == 2021) %>%
+       select(state,per_million) %>%
+  slice_max(per_million) %>%
+  select(state)
+
+maxval2022 <- sh_state_data %>%
+  filter(year == 2022) %>%
+       select(state,per_million) %>%
+  slice_max(per_million) %>%
+  select(state)
+
+alaskatotal <- aggregate(count ~ state, sh_state_data,sum) %>%
+  filter(state == "AK") %>%
+  select(count)
+
+min2020 <-  sh_state_data %>%
+  filter(year == 2020) %>%
+       select(state,per_million) %>%
+  slice_min(per_million) %>%
+  select(per_million)
+
+max2020 <-  sh_state_data %>%
+  filter(year == 2020) %>%
+       select(state,per_million) %>%
+  slice_max(per_million) %>%
+  select(per_million)
+
+min2016 <-  sh_state_data %>%
+  filter(year == 2016) %>%
+       select(state,per_million) %>%
+  slice_min(per_million) %>%
+  select(per_million)
+
+max2016 <-  sh_state_data %>%
+  filter(year == 2016) %>%
+       select(state,per_million) %>%
+  slice_max(per_million) %>%
+  select(per_million)
+
+```
+
+``` {r yearrange2}
+sliderInput("yearrange2",label = "Years:", sep= "", min = 2015, max = 2022, value = c(2015, 2022))
+
+```
+
+A visualization of deaths per million, by state, and over time allows us to examine the issue throughout different parts of the United States. States with the highest deaths per million are: `r maxval2015`, `r maxval2016`, `r maxval2017`, `r maxval2018`, `r maxval2019`, `r maxval2020`, `r maxval2021`, `r maxval2022` from 2015 to 2022, respectively.
+
+I find it interesting that Alaska has the highest number of deaths per million in 2016, 2019, and 2020. Alaska is the fourth least populous state in our data, after Wyoming, Vermont, and District of Columbia. There is not much research or statistics available online - except for this fact: in 2020, the Anchorage Daily News [reported](https://www.adn.com/alaska-news/2020/08/03/43-people-have-been-killed-by-alaska-law-enforcement-officers-in-the-last-five-and-a-half-years-heres-what-we-learned-by-examining-each-case/) that no statewide police shooting database *even existed.* In the same article, Brad Myrstrol, a University of Alaska Anchorage professor, explained that although the rates of police shootings in Alaska seem high, a low baseline number of incidents (`r alaskatotal` over eight years) and a small population makes those rates "highly variable."
+
+Unfortunately, deaths per million has not drastically shifted over the last seven years. There is a lot that needs to be done to combat and decrease police brutality across the approximately [19,000 independent law enforcemen agencies](https://www.aclu.org/other/fighting-police-abuse-community-action-manual) across our country. There is no one solution, but the United States seems to be moving towards a future of holding police and other law enforcement officials accountable. 
+
+For example, as of 2021, seven states (Colorado, Connecticut, Illinois, Maryland, New Jersey, New Mexico and South Carolina) [mandated by law](https://www.ncsl.org/research/civil-and-criminal-justice/legislatures-require-police-body-camera-use-statewide-magazine2021.aspx) that law enforcement officials wear cameras on their body. Although only seven states mandate body-cam usage by law, [half of law enforcement agencies](https://nij.ojp.gov/topics/articles/research-body-worn-cameras-and-law-enforcement) in the United States use body-cams. Body-cam supporters hope that usage will improve safety of officers, decrease violence against civilians, and above all else, provide evidence if there is police misconduct.
+
+Column {data-width = 500}
+-----------------------------------------------------------------------
+
+### Deaths per Million
+
+
+```{r map_v2}
+renderPlot({
+        
+  data <- sh_state_data %>%
+   filter(between(year, input$yearrange2[1], input$yearrange2[2]))
+  
+         usmap::plot_usmap(data = data, values = "per_million", color = "black") +
+  scale_fill_continuous(high = "#856084", low = "#DDE1E4", name = "Per Million", breaks = c(2,4,6,8,10)) + 
+            theme(legend.position = "left") +
+            labs(title = "Deaths Per Capita (By State)")
+})
+```
+
+
+Age & Gender
+=====================================  
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+### Examination
+```{r mapvariables, include=FALSE}
+fig <- function(width, heigth){
+     options(repr.plot.width = width, repr.plot.height = heigth)
+}
+
+median_male <- median(sh_shooting_data$age[sh_shooting_data$male==1])
+median_female <-median(sh_shooting_data$age[sh_shooting_data$male==0])
+
+mean_female <- mean(sh_shooting_data$age[sh_shooting_data$male==0])
+mean_male <- mean(sh_shooting_data$age[sh_shooting_data$male==1])
+
+quantile10female <- quantile(sh_shooting_data$age[sh_shooting_data$male==0], .1)
+quantile25female <- quantile(sh_shooting_data$age[sh_shooting_data$male==0], .25)
+quantile50female <- quantile(sh_shooting_data$age[sh_shooting_data$male==0], .5)
+quantile10male <- quantile(sh_shooting_data$age[sh_shooting_data$male==1], .1)
+quantile25male <- quantile(sh_shooting_data$age[sh_shooting_data$male==1], .25)
+quantile50male <- quantile(sh_shooting_data$age[sh_shooting_data$male==1], .5)
+
+maxmale <- max(sh_shooting_data$age[sh_shooting_data$male==1])
+maxfemale<- max(sh_shooting_data$age[sh_shooting_data$male==0])
+minmale <- min(sh_shooting_data$age[sh_shooting_data$male==1])
+minfemale <- min(sh_shooting_data$age[sh_shooting_data$male==0])
+
+maxall <- max(sh_shooting_data$age)
+minall <- min(sh_shooting_data$age)
+
+under18 <- sum(sh_shooting_data$age < 18)
+under18female <- sum(sh_shooting_data$age[sh_shooting_data$male==0] < 18)
+under18male <- sum(sh_shooting_data$age[sh_shooting_data$male==1] < 18)
+
+females <- sum(sh_shooting_data$male==0)
+males <- sum(sh_shooting_data$male==1)
+
+females2019 <- sum(sh_shooting_data$male==0 & sh_shooting_data$year==2019)
+males2019 <- sum(sh_shooting_data$male==1 & sh_shooting_data$year==2019)
+
+
+malearrests <- 4333749
+femalearrests <- 1666578
+fbicrimestat <- round((malearrests/(malearrests+femalearrests)),2)*100
+malemurdersprop <- round((males2019 / malearrests),5) *100
+femalemurdersprop <- round((females2019 / femalearrests),5) *100
+```
+
+``` {r yearrange3}
+sliderInput("yearrange3",label = "Years:", sep= "", min = 2015, max = 2022, value = c(2015, 2022))
+
+```
+
+
+There are staggeringly more male victims than female victims - `r males` versus `r females`. 
+
+In 2019, `r fbicrimestat`% of arrests were males. By this token, taking the [FBI Crime Statistics (2019)](https://ucr.fbi.gov/crime-in-the-u.s/2019/crime-in-the-u.s.-2019/topic-pages/tables/table-33) and our victim data from year 2019, `r malemurdersprop`% of males arrested in 2019 and `r femalemurdersprop`% of females arrested in 2019 were victims of fatal police brutality. Males are being killed at a higher rate than females. This could potentially be due to males committing a higher proportion of typical violent crime, such as murder, rape, aggravated assault, violent arson, other assaults, weapon posession, and offenses against their family and children than females (23% versus 19%). 
+
+The age range of victims is wide, `r minall` to `r maxall` across genders. Female victims range from ages `r minfemale` to `r maxfemale`. Similarly, male victims range in ages from `r minmale` to `r maxmale`. Median male victim age is `r median_male` and median female victim age is `r median_female`. The histogram on the right is slightly skewed to the right, indicating that victim age tends to be younger rather than older. 
+
+Some quick stats:
+
+* 10% of female victims are `r quantile10female` or younger
+* 10% of male victims are `r quantile10male` or younger
+* 25% of female victims are `r quantile25female` or younger
+* 25% of male victims are `r quantile25male` or younger
+* 50% of female victims are `r quantile50female` or younger
+* 50% of male victims are `r quantile50male` or younger
+
+Unfortunately, `r under18` children under the age of 18 have died in the last seven years at the hands of police - `r under18female` girls and `r under18male` boys. Jeremy Mardis was 6 years old, unarmed, and "fleeing in a vehicle"... As a six year old child. Ciara Meyer was 12 and a bystander to a dispute between her father and a law enforcement officer. No one should get killed by the people who have sworn to protect us, but children deserve it the least. 
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### A Breakdown by Age and Gender
+
+
+```{r genderagev2}
+
+renderPlot({
+  
+  data <- sh_shooting_data %>%
+   filter(between(year, input$yearrange3[1], input$yearrange3[2]))
+  
+  ggplot(data = data) + 
+              geom_bar(mapping = aes(x = age, y = ..prop.., group = gender, fill = gender)) + 
+              scale_y_continuous(labels = scales::percent_format()) + 
+              scale_fill_manual(values = c("#84E296","#856084")) +
+              labs(title = "Deaths by Gender and Age of Victim", x = "Age of Victim",y = "Percentage of Total Deaths", fill = "Gender")                          })
+```
+
+Over Time
+=====================================  
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+### Examination
+```{r movingaveragevariables, include=FALSE}
+deaths2015 <- sum(sh_shooting_data$year==2015)
+deaths2016 <- sum(sh_shooting_data$year==2016)
+deaths2017 <- sum(sh_shooting_data$year==2017)
+deaths2018 <- sum(sh_shooting_data$year==2018)
+deaths2019 <- sum(sh_shooting_data$year==2019)
+deaths2020 <- sum(sh_shooting_data$year==2020)
+deaths2021 <- sum(sh_shooting_data$year==2021)
+deaths2022 <- sum(sh_shooting_data$year==2022)
+
+diff1516 <- (deaths2016/deaths2015-1)*100
+diff1617 <- (deaths2017/deaths2016-1)*100
+diff1718 <- (deaths2018/deaths2017-1)*100
+diff1819 <- (deaths2019/deaths2018-1)*100
+diff1920 <- (deaths2020/deaths2019-1)*100
+diff2021 <- (deaths2021/deaths2020-1)*100
+
+diffdata <- c(diff1516, diff1617, diff1718, diff1819, diff1920, diff2021)
+
+meandiff <- mean(diffdata)
+
+fatalmax <- ceiling(max(sh_rolling_data$death_10da, na.rm = TRUE))
+fatalmin <- floor(min(sh_rolling_data$death_10da, na.rm = TRUE))
+fatalmedian <- round(median(sh_rolling_data$death_10da, na.rm = TRUE))
+
+```
+
+``` {r yearrange4}
+sliderInput("yearrange4",label = "Years:", sep= "", min = 2015, max = 2022, value = c(2015, 2022))
+```
+
+I used a ten day moving average in order to smooth out the trendline.
+
+Police shooting fatalities seem to have been very slightly decreasing over the years, with an average decrase (year over year) of `r round(-meandiff, 1)`% from 2015 to 2021. I excluded 2022 from this metric because 2022 is not over yet. We really have not seen much improvement since 2015. There is actually a `r round(diff1920,1)`% increase in deaths from police shootings in 2020 versus 2019, then a similar decrease of `r round(diff2021, 1)`% when looking at 2021 versus 2020. This could be due to COVID-19, as many people were staying in their places of residence. 
+
+We tend to see fatalities range between `r fatalmin` and `r fatalmax`, on average, with the median number of fatalities being `r fatalmedian`.
+
+All I can conclude from this chart is that despite public outcry and demands for change, not much is changing. I understand that the impact of changes in policing strategies and policeforce training takes time to see, but I do think that we should be seeing at least *some significant change* over the course of seven years.
+
+Column {data-width = 500}
+-----------------------------------------------------------------------
+
+### Deaths Over Time
+
+```{r movingaveragev2}
+renderPlot({
+  sh_rolling_data %>%
+     filter(between(year(date), input$yearrange4[1], input$yearrange4[2])) %>%
+  ggplot(aes(x=date, y=death_10da)) + geom_line() + ylim(0,5) +
+  labs(title = "10-Day Moving Average", x="Date",y="Number of Deaths")
+})
+```
+
+
+
+Ethnicity
+=====================================  
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+### Examination
+```{r variablesethnicity, include=FALSE}
+wh_as_oth <- round(sum(sh_race_data$per_million[sh_race_data$race!= "Black"]))
+black <- round(sum(sh_race_data$per_million[sh_race_data$race == "Black"]))
+blackperc <- round(black/(black+wh_as_oth),3) * 100
+wh_as_othperc <- round(wh_as_oth / (black + wh_as_oth),3) * 100
+diff <- blackperc - wh_as_othperc
+```
+It's quite obvious that black men and women are murdered by police more often than those in the Asian, White, and Other ethnic groups. In fact, deaths per million for Asian, White, and Other ethnic groups *combined* is `r wh_as_oth`, versus `r black` for people who are in the Black ethnicity group. That's a `r diff`% difference.
+
+You may be wondering to yourself: W H Y are black men and women killed more often than those of other ethnicities? The first, and probably most obvious, issue is a societal race problem. This past month, October 2022, [a nine year old Black girl](https://www.newjerseyhills.com/the_progress/news/caldwell-man-says-he-apologized-for-calling-police-on-girl/article_0be23336-6748-11ed-ab39-079df2a00dc2.html) was spraying a homemade pesticide in her front yard to ward off insects. Her family's neighbor, a White male, called the non-emergency police line to report a "little Black woman" and said that he "didn't know what the hell she [was doing]", further explaining that it scared him. This is racism and it's pervasive across our country, towards children and adults alike.
+
+The racism that plagues our country was further highlighted when Former President Donald Trump [told the Proud Boys](https://www.cnn.com/factsfirst/politics/factcheck_0e65baed-5eab-45eb-b322-871b4016c49a), a far-right group that has endorsed violence, to "stand back and stand by" during a nationally televised presidential debate.
+
+Another factor that can explain why Black men and women may be experiencing death at the hand of police more often is policing strategies. Daanika Gordon, who teaches sociology at Tufts University, [explained that "predominantly Black neighborhoods are .. over-policed when it comes to surveillance and social control, and under-policed when it comes to emergency services."](https://now.tufts.edu/2020/06/17/how-racial-segregation-and-policing-intersect-america). She also mentioned that policing in predominantly White and predominantly Black neighborhoods is distinctly different (based on her research in a  highly-segregated rust belt city). In predominantly White neighborhoods, police provide a quick and helpful service through collaboration with residents and business owners. In predominantly Black neighborhoods, police use tactics such as traffic stops which can feel aggressive and intimidating. The latter have more devoted resources to them than the former.
+
+Column {data-width = 500}
+-----------------------------------------------------------------------
+
+### Deaths Per Million by Ethnicity
+``` {r ethnicityv2}
+
+ggplot(sh_race_data, aes(x = race, y=per_million, fill=per_million)) +
+            geom_bar(stat= "identity") +
+            scale_fill_continuous(high = "#624862", low = "#baa1ba",name="Per Million") + 
+            labs(
+              title = "Deaths Per Million by Ethnicity",
+              subtitle = "Ethnicity Data Sourced from 2020 United States Census"
+            ) +
+            theme(
+              plot.title = element_text(hjust = 0.5),
+              plot.subtitle = element_text(hjust = 0.5)
+            ) + 
+            xlab("Ethnicity") +
+            ylab("Deaths per Million") 
+```
+
+Honoring the Victims
+=====================================  
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+### About
+`r total` human beings have died in the last seven years at the hands of police. I am honoring them here with their names, ages, and dates of passing. May they rest in peace.
+
+Column {data-width = 500}
+-----------------------------------------------------------------------
+
+### Names, Ages, and Date of Passing
+```{r chunket dplyr, kable.opts=list(caption='Summary tables are printed with some default options.')}
+knit_print.table <- lemon_print
+sh_shooting_data %>%
+  mutate(Name = name, Age = age, Date = format(date, "%B %d, %Y")) %>%
+  select(Name, Age, Date)
+```
+
