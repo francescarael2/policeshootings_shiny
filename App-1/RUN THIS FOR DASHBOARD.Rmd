@@ -28,11 +28,11 @@ library(rsconnect)
 this.dir <- dirname(rstudioapi::getSourceEditorContext()$path)
 setwd(this.dir)
 
-sh_shooting_data <- get(load("shooting_data.RData"))
-sh_state_data <- get(load("state_data.RData"))
-sh_race_data <- get(load("race_data.RData"))
-sh_rolling_data <- get(load("rolling_data.RData"))
-original_data <- get(load("original_data.RData"))
+sh_shooting_data <- get(load("./data/shooting_data.RData"))
+sh_state_data <- get(load("./data/state_data.RData")) 
+sh_race_data <- get(load("./data/race_data.RData"))
+sh_rolling_data <- get(load("./data/rolling_data.RData"))
+original_data <- get(load("./data/original_data.RData"))
 
 
 sh_rolling_data <- sh_shooting_data %>%
@@ -74,8 +74,8 @@ After the murders of [Michael Brown](https://en.wikipedia.org/wiki/Shooting_of_M
 sliderInput("yearrange",label = "Years:", sep= "", min = 2015, max = 2022, value = c(2015, 2022))
 ```
 
-I recognize that not all police are bad, and that the media tends to sensationalize stories in order to get views/clicks/advertising dollars, but that doesn't take away from the fact that `r total` human beings have been killed in the last seven years by individuals who we are supposed to be able to trust to protect us. The last tab of this dashboard has the names and ages of all victims (both included and excluded from the data visualizations).
-   
+I recognize that not all police are bad, and that the media tends to sensationalize stories in order to get views/clicks/advertising dollars, but that doesn't take away from the fact that `r total` human beings have been killed in the last seven years by individuals who we are supposed to be able to trust to protect us. The last tab of this dashboard has the names and ages of all victims (both included and excluded from the data visualizations). 
+
 Column {data-width=500}
 -----------------------------------------------------------------------
 
