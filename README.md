@@ -1,6 +1,6 @@
 # Police Shootings - R Shiny Dashboard
 
-NOTE: to open the dashboard, download this repository and open /App-1/RUN THIS FOR DASHBOARD.Rmd. Then Run Document. The dashboard will open on your computer. 
+NOTE: to open the dashboard, download this repository by clicking the green Code button (top right), download zip, unzip folder, and open /App-1/RUN THIS FOR DASHBOARD.Rmd. Then Run Document. The dashboard will open on your computer. 
 
 The issue of police brutality has been a topic in the news for quite some time. The media tends to blame police brutality on racism, so I decided to look into the data and determine if the media’s claims are backed up by evidence (spoiler: I went into this assuming they are). For my project, I decided to build an interactive dashboard using R Shiny to examine police-involved killing data published by the Washington Post, which dates back to 2015. To build the dashboard, I learned and used R Shiny. I learned a lot about R Shiny, and data wrangling, cleaning, and visualization. My thoughts and findings on the data and visualizations themselves can be found in the dashboard. Here, I will be talking about my experience, what I learned, and what I wish I had more time for.
 
